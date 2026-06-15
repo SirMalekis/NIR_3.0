@@ -79,19 +79,20 @@ Graph createNetworkTopology(
         if (heterogeneous) {
             std::string ntype = sampleType(rng, node_mix);
             const NodeProfile& prof = NODE_PROFILES.at(ntype);
-            n.node_type  = ntype;
-            n.P_attack   = jitter(rng, prof.P_attack,   0.05);
-            n.P_recovery = jitter(rng, prof.P_recovery,  0.05);
-            n.mu         = clamp(prof.mu + std::uniform_real_distribution<double>(-0.02,0.02)(rng), 0.01, 1.0);
-            n.C_repair   = prof.C_repair;
-            n.weight     = prof.weight;
-        } else {
-            n.node_type  = "host";
-            n.P_attack   = clamp(base_P_attack   + u05(rng), 0.01, 0.99);
-            n.P_recovery = clamp(base_P_recovery + u05(rng), 0.01, 0.99);
-            n.mu         = clamp(base_mu         + u01(rng), 0.01, 1.00);
-            n.C_repair   = base_C_repair;
-            n.weight     = base_weight;
+            n.node_type = ntype;
+
+            // ── Множители для sweep ──────────────────────────────────────
+            // Базовые значения (0.60 для P_attack, 0.20 для mu) используются
+            // как точка отсчёта. Если sweep задаёт base_mu=0.40 (в 2 раза больше),
+            // то все mu узлов удваиваются, сохраняя пропорции между типами.
+            double mu_mult = (base_mu > 0.0) ? (base_mu / 0.20) : 1.0;
+            double p_attack_mult = (base_P_attack > 0.0) ? (base_P_attack / 0.60) : 1.0;
+
+            n.P_attack = jitter(rng, prof.P_attack * p_attack_mult, 0.05);
+            n.P_recovery = jitter(rng, prof.P_recovery, 0.05);
+            n.mu = clamp(prof.mu * mu_mult + std::uniform_real_distribution<double>(-0.02, 0.02)(rng), 0.01, 1.0);
+            n.C_repair = prof.C_repair;
+            n.weight = prof.weight;
         }
     }
 

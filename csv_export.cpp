@@ -4,15 +4,8 @@
 #include <iomanip>
 #include <filesystem>
 
-namespace fs = std::filesystem;
-
 static void ensureDir(const std::string& path) {
-    try {
-        fs::create_directories(path); // Кроссплатформенное создание папок
-    }
-    catch (...) {
-        std::cerr << "Не удалось создать папку: " << path << "\n";
-    }
+    std::filesystem::create_directories(path);
 }
 
 void exportTimeSeries(const SimResult& res, const std::string& path) {
