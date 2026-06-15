@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="NIR_3.0.vcxproj" Id="7f1aa904-2540-4817-8a91-9cab94e2c1cb" />
+</Solution>
