@@ -36,34 +36,93 @@ def plot_topology(df, out_dir):
 
 # 2. FIFO vs Triage
 def plot_strategy(df, out_dir):
+    """Создаёт ДВА графика: по LCC и по взвешенной живучести."""
     topologies = df['topology'].unique()
-    fig, axs = plt.subplots(1, len(topologies), figsize=(6*len(topologies), 5), sharey=True)
-    if len(topologies) == 1: axs = [axs]
-    for ax, topo in zip(axs, topologies):
-        sub = df[df['topology'] == topo]
-        for gk, style in zip(['fifo', 'triage'], [{'ls':'--', 'marker':'s', 'color':'gray'}, {'ls':'-', 'marker':'o', 'color':'black'}]):
-            gk_data = sub[sub['gatekeeper'] == gk]
-            ax.errorbar(gk_data['R'], gk_data['lcc_mean'], yerr=gk_data['lcc_ci'], 
-                        label=gk.upper(), fmt=style['marker'], ls=style['ls'], color=style['color'], capsize=3)
-        for _, row in sub[sub['sig_direction'].str.contains('triage > fifo', na=False)].iterrows():
-            ax.annotate('*', xy=(row['R'], row['lcc_mean']+0.05), fontsize=16, color='red', ha='center')
-        ax.set_title(f"Топология: {topo.upper()}"); ax.set_xlabel("Ресурсы R"); ax.grid(alpha=0.3); ax.legend()
-    axs[0].set_ylabel("LCC"); plt.suptitle("FIFO vs Triage")
-    plt.tight_layout(); plt.savefig(os.path.join(out_dir, "plot_strategy.png")); plt.close()
+    
+    # Создаём два графика: LCC и Weighted Survivability
+    for metric, ylabel, suffix in [
+        ('lcc_mean', 'LCC', 'lcc'),
+        ('wsurv_mean', 'Взвешенная живучесть φ_w', 'wsurv')
+    ]:
+        ci_col = metric.replace('_mean', '_ci')
+        
+        fig, axs = plt.subplots(1, len(topologies), figsize=(6*len(topologies), 5), sharey=True)
+        if len(topologies) == 1: 
+            axs = [axs]
+            
+        for ax, topo in zip(axs, topologies):
+            sub = df[df['topology'] == topo]
+            
+            # FIFO
+            fifo_data = sub[sub['gatekeeper'] == 'fifo']
+            ax.errorbar(fifo_data['R'], fifo_data[metric], yerr=fifo_data[ci_col],
+                       label='FIFO', fmt='s', ls='--', color='gray', capsize=3, alpha=0.7)
+            
+            # Triage
+            triage_data = sub[sub['gatekeeper'] == 'triage']
+            ax.errorbar(triage_data['R'], triage_data[metric], yerr=triage_data[ci_col],
+                       label='Triage', fmt='o', ls='-', color='black', capsize=3)
+            
+            # Отмечаем значимые точки
+            for _, row in sub[sub['sig_direction'].str.contains('triage > fifo', na=False)].iterrows():
+                ax.annotate('*', xy=(row['R'], row[metric]+0.05), fontsize=16, color='red', ha='center')
+            
+            ax.set_title(f"Топология: {topo.upper()}")
+            ax.set_xlabel("Ресурсы R")
+            ax.grid(alpha=0.3)
+            ax.legend()
+            
+        if len(axs) > 0:
+            axs[0].set_ylabel(ylabel)
+        plt.suptitle(f"FIFO vs Triage — {ylabel}")
+        plt.tight_layout()
+        plt.savefig(os.path.join(out_dir, f"plot_strategy_{suffix}.png"))
+        plt.close()
+        print(f"  Сохранено: plot_strategy_{suffix}.png")
 
 # 3. Векторы атак
 def plot_attack(df, out_dir):
-    strategies = df['attack_strategy'].unique(); topologies = df['topology'].unique()
-    x = range(len(topologies)); w = 0.8 / len(strategies)
-    fig, ax = plt.subplots(figsize=(10, 6))
-    for i, strat in enumerate(strategies):
-        sub = df[df['attack_strategy'] == strat]
-        vals = [sub[sub['topology']==t]['lcc_mean'].values[0] if t in sub['topology'].values else 0 for t in topologies]
-        cis  = [sub[sub['topology']==t]['lcc_ci'].values[0] if t in sub['topology'].values else 0 for t in topologies]
-        ax.bar([i + (i_pos - len(strategies)/2 + 0.5) * w for i_pos in x], vals, w*0.9, yerr=cis, capsize=3, label=strat)
-    ax.set_xticks(x); ax.set_xticklabels([t.upper() for t in topologies])
-    ax.set_ylabel("LCC"); ax.set_title("Векторы атак"); ax.legend(); ax.grid(axis='y', alpha=0.3)
-    plt.tight_layout(); plt.savefig(os.path.join(out_dir, "plot_attack.png")); plt.close()
+    """Исправленная версия с правильной группировкой."""
+    strategies = df['attack_strategy'].unique()
+    topologies = df['topology'].unique()
+    
+    # Создаём фигуру с подграфиками — по одному на топологию
+    fig, axs = plt.subplots(1, len(topologies), figsize=(6*len(topologies), 5), sharey=True)
+    if len(topologies) == 1:
+        axs = [axs]
+    
+    # Цвета для атак
+    attack_colors = {
+        'targeted': '#e74c3c',    # красный
+        'random': '#3498db',      # синий
+        'cascading': '#2ecc71'    # зелёный
+    }
+    
+    for ax, topo in zip(axs, topologies):
+        sub = df[df['topology'] == topo]
+        x = range(len(strategies))
+        
+        # Для каждой топологии рисуем столбцы по атакам
+        vals = [sub[sub['attack_strategy']==s]['lcc_mean'].values[0] 
+                for s in strategies]
+        cis = [sub[sub['attack_strategy']==s]['lcc_ci'].values[0] 
+               for s in strategies]
+        colors = [attack_colors.get(s, 'gray') for s in strategies]
+        
+        ax.bar(x, vals, yerr=cis, capsize=5, color=colors, alpha=0.8)
+        ax.set_xticks(x)
+        ax.set_xticklabels([s.upper() for s in strategies], rotation=15)
+        ax.set_title(f"Топология: {topo.upper()}")
+        ax.set_ylabel("LCC")
+        ax.grid(axis='y', alpha=0.3)
+        ax.set_ylim(0, 1.0)
+    
+    axs[0].set_ylabel("LCC")
+    plt.suptitle("Векторы атак по топологиям")
+    plt.tight_layout()
+    plt.savefig(os.path.join(out_dir, "plot_attack.png"))
+    plt.close()
+    print("  Сохранено: plot_attack.png")
 
 # 4. Временные ряды
 def plot_timeseries(out_dir):
