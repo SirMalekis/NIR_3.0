@@ -128,13 +128,10 @@ Graph createNetworkTopology(
     } else if (topology_type == "ring") {
         for (int i = 0; i < num_nodes; ++i)
             G.addEdge(i, (i+1) % num_nodes);
-    } else if (topology_type == "bus") {
-        for (int i = 0; i < num_nodes-1; ++i)
-            G.addEdge(i, i+1);
     } else {
         throw std::invalid_argument(
             "Неизвестная топология: '" + topology_type +
-            "'. Допустимые: star, full_mesh, ring, bus.");
+            "'. Допустимые: star, full_mesh, ring.");
     }
     return G;
 }

@@ -1,15 +1,13 @@
 /**
- * main.cpp — Интерактивное меню управления симуляцией.
- *
- * Запуск:
- *   ./netsim          — интерактивное меню
- *   ./netsim --quick  — повтор последних настроек
- */
+main.cpp — Интерактивное меню управления симуляцией.
+Запуск:
+./netsim          — интерактивное меню
+./netsim --quick  — повтор последних настроек
+*/
 #include "topology.h"
 #include "engine.h"
 #include "experiments.h"
 #include "csv_export.h"
-
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -23,44 +21,56 @@
 #include <iomanip>
 #include <limits>
 #include <cstdlib>
+#include <filesystem>  // ← ДОБАВЛЕНО: для create_directories
 
 #ifdef _WIN32
-#include <windows.h>
-#define ANSI_RESET   ""
-#define ANSI_BOLD    ""
-#define ANSI_GREEN   ""
-#define ANSI_YELLOW  ""
-#define ANSI_RED     ""
-#define ANSI_DIM     ""
-#define ANSI_CYAN    ""
+#include <windows.h>   // ← ДОБАВЛЕНО: для SetConsoleOutputCP
+// После SetConsoleOutputCP(CP_UTF8) можно использовать настоящие ANSI-коды
+#define ANSI_RESET    "\033[0m"
+#define ANSI_BOLD     "\033[1m"
+#define ANSI_GREEN    "\033[92m"
+#define ANSI_YELLOW   "\033[93m"
+#define ANSI_RED      "\033[91m"
+#define ANSI_DIM      "\033[90m"
+#define ANSI_CYAN     "\033[96m"
 #else
-#define ANSI_RESET   "\033[0m"
-#define ANSI_BOLD    "\033[1m"
-#define ANSI_GREEN   "\033[92m"
-#define ANSI_YELLOW  "\033[93m"
-#define ANSI_RED     "\033[91m"
-#define ANSI_DIM     "\033[90m"
-#define ANSI_CYAN    "\033[96m"
+#define ANSI_RESET    "\033[0m"
+#define ANSI_BOLD     "\033[1m"
+#define ANSI_GREEN    "\033[92m"
+#define ANSI_YELLOW   "\033[93m"
+#define ANSI_RED      "\033[91m"
+#define ANSI_DIM      "\033[90m"
+#define ANSI_CYAN     "\033[96m"
 #endif
 
- // ─────────────────────────────────────────────────────────────────────────────
- // Форматирование
- // ─────────────────────────────────────────────────────────────────────────────
+namespace fs = std::filesystem;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Форматирование
+// ────────────────────────────────────────────────────────────────────────────
 static void hr(char c = '-', int w = 68) {
     for (int i = 0; i < w; ++i) std::cout << c;
     std::cout << '\n';
 }
+
+// ИСПРАВЛЕНО: защита от отрицательного pad (UTF-8 + длинные заголовки)
 static void header(const std::string& title) {
     hr('=');
-    int pad = (68 - (int)title.size() - 2) / 2;
-    std::cout << "  " << std::string(pad, ' ') << ANSI_BOLD << title << ANSI_RESET << '\n';
+    int title_len = (int)title.size();
+    int pad = 68 - title_len - 2;
+    if (pad < 0) pad = 0;  // ← КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ
+    pad /= 2;
+    std::cout << "   " << std::string(pad, ' ')
+        << ANSI_BOLD << title << ANSI_RESET << '\n';
     hr('=');
 }
+
 static void section(const std::string& title) {
     std::cout << "\n  ┌─ " << title << '\n';
 }
+
 static void hint(const std::string& msg) {
-    std::cout << "  │  " << ANSI_DIM << msg << ANSI_RESET << '\n';
+    std::cout << "  │   " << ANSI_DIM << msg << ANSI_RESET << '\n';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -70,22 +80,22 @@ static int askInt(const std::string& prompt, int lo, int hi, int def) {
     hint("Тип: int  |  Диапазон: [" + std::to_string(lo) + "…" + std::to_string(hi) +
         "]  |  По умолчанию: " + std::to_string(def));
     while (true) {
-        std::cout << "  │  " << ANSI_BOLD << prompt << ANSI_RESET << '\n' << "  │  > ";
+        std::cout << "  │   " << ANSI_BOLD << prompt << ANSI_RESET << '\n' << "  │   > ";
         std::string raw; std::getline(std::cin, raw);
         if (raw.empty()) {
-            std::cout << "  │  " << ANSI_GREEN << "Принято: " << def << ANSI_RESET << '\n';
+            std::cout << "  │   " << ANSI_GREEN << "Принято: " << def << ANSI_RESET << '\n';
             return def;
         }
         try {
             int val = std::stoi(raw);
             if (val >= lo && val <= hi) {
-                std::cout << "  │  " << ANSI_GREEN << "Принято: " << val << ANSI_RESET << '\n';
+                std::cout << "  │   " << ANSI_GREEN << "Принято: " << val << ANSI_RESET << '\n';
                 return val;
             }
-            std::cout << "  │  " << ANSI_RED << "Ошибка: введите от " << lo << " до " << hi << ANSI_RESET << '\n';
+            std::cout << "  │   " << ANSI_RED << "Ошибка: введите от " << lo << " до " << hi << ANSI_RESET << '\n';
         }
         catch (...) {
-            std::cout << "  │  " << ANSI_RED << "Ошибка: введите целое число." << ANSI_RESET << '\n';
+            std::cout << "  │   " << ANSI_RED << "Ошибка: введите целое число." << ANSI_RESET << '\n';
         }
     }
 }
@@ -96,24 +106,24 @@ static double askFloat(const std::string& prompt, double lo, double hi, double d
     oss << "Тип: float  |  Диапазон: [" << lo << "…" << hi << "]  |  По умолчанию: " << def;
     hint(oss.str());
     while (true) {
-        std::cout << "  │  " << ANSI_BOLD << prompt << ANSI_RESET << '\n' << "  │  > ";
+        std::cout << "  │   " << ANSI_BOLD << prompt << ANSI_RESET << '\n' << "  │   > ";
         std::string raw; std::getline(std::cin, raw);
         if (raw.empty()) {
-            std::cout << "  │  " << ANSI_GREEN << "Принято: " << def << ANSI_RESET << '\n';
+            std::cout << "  │   " << ANSI_GREEN << "Принято: " << def << ANSI_RESET << '\n';
             return def;
         }
-        // Заменяем запятую на точку
+        // ИСПРАВЛЕНО: поддержка запятой как десятичного разделителя
         std::replace(raw.begin(), raw.end(), ',', '.');
         try {
             double val = std::stod(raw);
             if (val >= lo && val <= hi) {
-                std::cout << "  │  " << ANSI_GREEN << "Принято: " << val << ANSI_RESET << '\n';
+                std::cout << "  │   " << ANSI_GREEN << "Принято: " << val << ANSI_RESET << '\n';
                 return val;
             }
-            std::cout << "  │  " << ANSI_RED << "Ошибка: значение от " << lo << " до " << hi << ANSI_RESET << '\n';
+            std::cout << "  │   " << ANSI_RED << "Ошибка: значение от " << lo << " до " << hi << ANSI_RESET << '\n';
         }
         catch (...) {
-            std::cout << "  │  " << ANSI_RED << "Ошибка: введите число." << ANSI_RESET << '\n';
+            std::cout << "  │   " << ANSI_RED << "Ошибка: введите число." << ANSI_RESET << '\n';
         }
     }
 }
@@ -126,24 +136,24 @@ static std::string askChoice(const std::string& prompt,
     for (int i = 0; i < (int)options.size(); ++i) oss << (i ? "|" : "") << options[i];
     hint("Варианты: " + oss.str() + "  |  По умолчанию: " + def);
     for (auto& o : options) {
-        std::string mark = (o == def) ? "  ←" : "";
-        std::cout << "  │    " << ANSI_CYAN << std::left << std::setw(15) << o << ANSI_RESET;
+        std::string mark = (o == def) ? "  ← " : " ";
+        std::cout << "  │     " << ANSI_CYAN << std::left << std::setw(15) << o << ANSI_RESET;
         if (descs.count(o)) std::cout << descs.at(o);
         std::cout << mark << '\n';
     }
     while (true) {
-        std::cout << "  │  " << ANSI_BOLD << prompt << ANSI_RESET << '\n' << "  │  > ";
+        std::cout << "  │   " << ANSI_BOLD << prompt << ANSI_RESET << '\n' << "  │   > ";
         std::string raw; std::getline(std::cin, raw);
         if (raw.empty()) {
-            std::cout << "  │  " << ANSI_GREEN << "Принято: " << def << ANSI_RESET << '\n';
+            std::cout << "  │   " << ANSI_GREEN << "Принято: " << def << ANSI_RESET << '\n';
             return def;
         }
         for (auto& o : options)
             if (raw == o) {
-                std::cout << "  │  " << ANSI_GREEN << "Принято: " << raw << ANSI_RESET << '\n';
+                std::cout << "  │   " << ANSI_GREEN << "Принято: " << raw << ANSI_RESET << '\n';
                 return raw;
             }
-        std::cout << "  │  " << ANSI_RED << "Выберите одно из приведённых вариантов." << ANSI_RESET << '\n';
+        std::cout << "  │   " << ANSI_RED << "Выберите одно из приведённых вариантов." << ANSI_RESET << '\n';
     }
 }
 
@@ -151,14 +161,16 @@ static std::vector<std::string> askMultiChoice(const std::string& prompt,
     const std::vector<std::string>& options,
     const std::vector<std::string>& def) {
     std::ostringstream d;
-    for (int i = 0; i < (int)def.size(); ++i) d << (i ? "," : "") << def[i];
-    hint("Введите через запятую. Варианты: " + [&]() {std::string s; for (auto& o : options)s += o + ","; return s; }());
+    for (int i = 0; i < (int)def.size(); ++i) d << (i ? ", " : "") << def[i];
+    hint("Введите через запятую. Варианты: " + [&]() {
+        std::string s; for (auto& o : options) s += o + ", "; return s;
+        }());
     hint("По умолчанию: " + d.str());
     while (true) {
-        std::cout << "  │  " << ANSI_BOLD << prompt << ANSI_RESET << '\n' << "  │  > ";
+        std::cout << "  │   " << ANSI_BOLD << prompt << ANSI_RESET << '\n' << "  │   > ";
         std::string raw; std::getline(std::cin, raw);
         if (raw.empty()) {
-            std::cout << "  │  " << ANSI_GREEN << "Принято: " << d.str() << ANSI_RESET << '\n';
+            std::cout << "  │   " << ANSI_GREEN << "Принято: " << d.str() << ANSI_RESET << '\n';
             return def;
         }
         std::vector<std::string> chosen;
@@ -166,16 +178,17 @@ static std::vector<std::string> askMultiChoice(const std::string& prompt,
         std::string token;
         bool ok = true;
         while (std::getline(ss, token, ',')) {
+            // Убираем пробелы
             while (!token.empty() && token.front() == ' ') token.erase(token.begin());
             while (!token.empty() && token.back() == ' ')  token.pop_back();
             if (std::find(options.begin(), options.end(), token) == options.end()) {
-                std::cout << "  │  " << ANSI_RED << "Неизвестный вариант: " << token << ANSI_RESET << '\n';
+                std::cout << "  │   " << ANSI_RED << "Неизвестный вариант: " << token << ANSI_RESET << '\n';
                 ok = false; break;
             }
             chosen.push_back(token);
         }
         if (!ok || chosen.empty()) continue;
-        std::cout << "  │  " << ANSI_GREEN << "Принято." << ANSI_RESET << '\n';
+        std::cout << "  │   " << ANSI_GREEN << "Принято." << ANSI_RESET << '\n';
         return chosen;
     }
 }
@@ -183,19 +196,26 @@ static std::vector<std::string> askMultiChoice(const std::string& prompt,
 static bool askBool(const std::string& prompt, bool def) {
     hint(std::string("Тип: bool  |  Варианты: да/нет  |  По умолчанию: ") + (def ? "да" : "нет"));
     while (true) {
-        std::cout << "  │  " << ANSI_BOLD << prompt << ANSI_RESET << '\n' << "  │  > ";
+        std::cout << "  │   " << ANSI_BOLD << prompt << ANSI_RESET << '\n' << "  │   > ";
         std::string raw; std::getline(std::cin, raw);
         if (raw.empty()) {
-            std::cout << "  │  " << ANSI_GREEN << "Принято: " << (def ? "да" : "нет") << ANSI_RESET << '\n';
+            std::cout << "  │   " << ANSI_GREEN << "Принято: " << (def ? "да" : "нет") << ANSI_RESET << '\n';
             return def;
         }
         std::transform(raw.begin(), raw.end(), raw.begin(), ::tolower);
-        if (raw == "да" || raw == "yes" || raw == "y" || raw == "1" || raw == "true") { std::cout << "  │  " << ANSI_GREEN << "Принято: да\n" << ANSI_RESET; return true; }
-        if (raw == "нет" || raw == "no" || raw == "n" || raw == "0" || raw == "false") { std::cout << "  │  " << ANSI_GREEN << "Принято: нет\n" << ANSI_RESET; return false; }
-        std::cout << "  │  " << ANSI_RED << "Введите: да / нет\n" << ANSI_RESET;
+        if (raw == "да" || raw == "yes" || raw == "y" || raw == "1" || raw == "true") {
+            std::cout << "  │   " << ANSI_GREEN << "Принято: да" << ANSI_RESET << '\n';
+            return true;
+        }
+        if (raw == "нет" || raw == "no" || raw == "n" || raw == "0" || raw == "false") {
+            std::cout << "  │   " << ANSI_GREEN << "Принято: нет" << ANSI_RESET << '\n';
+            return false;
+        }
+        std::cout << "  │   " << ANSI_RED << "Введите: да / нет" << ANSI_RESET << '\n';
     }
 }
 
+// ИСПРАВЛЕНО: поддержка запятой как десятичного разделителя в linspace
 static std::vector<double> askLinspace(const std::string& prompt,
     double lo, double hi,
     double def_lo, double def_hi, int def_n) {
@@ -203,31 +223,36 @@ static std::vector<double> askLinspace(const std::string& prompt,
     oss << "Формат: MIN MAX [ТОЧЕК]  (например: " << def_lo << " " << def_hi << " " << def_n << ")";
     hint(oss.str());
     while (true) {
-        std::cout << "  │  " << ANSI_BOLD << prompt << ANSI_RESET << '\n' << "  │  > ";
+        std::cout << "  │   " << ANSI_BOLD << prompt << ANSI_RESET << '\n' << "  │   > ";
         std::string raw; std::getline(std::cin, raw);
         if (raw.empty()) {
             std::vector<double> r;
             for (int i = 0; i < def_n; ++i)
                 r.push_back(def_lo + (def_hi - def_lo) * i / (def_n - 1));
-            std::cout << "  │  " << ANSI_GREEN << "Принято: linspace(" << def_lo << "," << def_hi << "," << def_n << ")\n" << ANSI_RESET;
+            std::cout << "  │   " << ANSI_GREEN << "Принято: linspace(" << def_lo << ", " << def_hi << ", " << def_n << ")" << ANSI_RESET << '\n';
             return r;
         }
+        // ИСПРАВЛЕНО: замена запятой на точку для русской локали
+        std::replace(raw.begin(), raw.end(), ',', '.');
         std::istringstream ss(raw);
         double v_min, v_max; int n_pts = def_n;
         if (!(ss >> v_min >> v_max)) {
-            std::cout << "  │  " << ANSI_RED << "Формат: MIN MAX  или  MIN MAX ТОЧЕК\n" << ANSI_RESET; continue;
+            std::cout << "  │   " << ANSI_RED << "Формат: MIN MAX  или  MIN MAX ТОЧЕК" << ANSI_RESET << '\n';
+            continue;
         }
         ss >> n_pts;
         if (v_min >= v_max || v_min < lo || v_max > hi) {
-            std::cout << "  │  " << ANSI_RED << "MIN < MAX, оба в [" << lo << "," << hi << "]\n" << ANSI_RESET; continue;
+            std::cout << "  │   " << ANSI_RED << "MIN < MAX, оба в [" << lo << ", " << hi << "]" << ANSI_RESET << '\n';
+            continue;
         }
         if (n_pts < 2 || n_pts > 50) {
-            std::cout << "  │  " << ANSI_RED << "Точек: 2–50\n" << ANSI_RESET; continue;
+            std::cout << "  │   " << ANSI_RED << "Точек: 2–50" << ANSI_RESET << '\n';
+            continue;
         }
         std::vector<double> r;
         for (int i = 0; i < n_pts; ++i)
             r.push_back(v_min + (v_max - v_min) * i / (n_pts - 1));
-        std::cout << "  │  " << ANSI_GREEN << "Принято.\n" << ANSI_RESET;
+        std::cout << "  │   " << ANSI_GREEN << "Принято." << ANSI_RESET << '\n';
         return r;
     }
 }
@@ -240,10 +265,10 @@ static std::vector<double> askFloatList(const std::string& prompt,
     hint("Введите числа через пробел. Диапазон: [" + std::to_string(lo) + "…" + std::to_string(hi) + "]");
     hint("По умолчанию: " + d.str());
     while (true) {
-        std::cout << "  │  " << ANSI_BOLD << prompt << ANSI_RESET << '\n' << "  │  > ";
+        std::cout << "  │   " << ANSI_BOLD << prompt << ANSI_RESET << '\n' << "  │   > ";
         std::string raw; std::getline(std::cin, raw);
         if (raw.empty()) {
-            std::cout << "  │  " << ANSI_GREEN << "Принято.\n" << ANSI_RESET;
+            std::cout << "  │   " << ANSI_GREEN << "Принято." << ANSI_RESET << '\n';
             return def;
         }
         std::istringstream ss(raw);
@@ -257,10 +282,10 @@ static std::vector<double> askFloatList(const std::string& prompt,
         std::sort(vals.begin(), vals.end());
         vals.erase(std::unique(vals.begin(), vals.end()), vals.end());
         if (bad || vals.size() < 2 || vals.size() > 20) {
-            std::cout << "  │  " << ANSI_RED << "Минимум 2, максимум 20 значений в диапазоне.\n" << ANSI_RESET;
+            std::cout << "  │   " << ANSI_RED << "Минимум 2, максимум 20 значений в диапазоне." << ANSI_RESET << '\n';
             continue;
         }
-        std::cout << "  │  " << ANSI_GREEN << "Принято.\n" << ANSI_RESET;
+        std::cout << "  │   " << ANSI_GREEN << "Принято." << ANSI_RESET << '\n';
         return vals;
     }
 }
@@ -283,13 +308,9 @@ struct Config {
     double      base_mu = 0.20;
     std::string out_dir = "results";
     int         sample_points = 200;
-
-    // Для topology/attack/sweep/strategy
-    std::vector<std::string> topologies = { "star","ring","bus","full_mesh" };
-    std::vector<std::string> attack_strategies = { "targeted","random","cascading" };
+    std::vector<std::string> topologies = { "star", "ring", "full_mesh" };
+    std::vector<std::string> attack_strategies = { "targeted", "random", "cascading" };
     std::vector<double>      resource_levels = { 50, 100, 200, 500 };
-
-    // Для sweep
     std::map<std::string, std::vector<double>> sweep_ranges;
     std::vector<std::string> sweep_params;
 };
@@ -314,7 +335,6 @@ static void setupCommon(Config& c) {
     c.attack_lambda = askFloat("Интенсивность атак λ (атак/ед.вр.)", 0.01, 20.0, c.attack_lambda);
     c.global_resources = askFloat("Глобальный ресурс R_total", 0.0, 10000.0, c.global_resources);
     c.repair_slots = askInt("Слотов ремонта за шаг (repair_slots)", 1, 20, c.repair_slots);
-
     section("Параметры узлов");
     c.heterogeneous = askBool("Гетерогенная сеть? (server/switch/host)", c.heterogeneous);
     if (!c.heterogeneous) {
@@ -336,26 +356,23 @@ static void printSummary(const std::string& scenario, const Config& c) {
     hr();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
 // Консольный отчёт по топологиям
 // ─────────────────────────────────────────────────────────────────────────────
 static void printTopoReport(const TopoCompResult& comp) {
     hr();
     std::cout << ANSI_BOLD << "  Результаты сравнения топологий:\n" << ANSI_RESET;
-    std::cout << "  " << std::left << std::setw(12) << "Топология"
+    std::cout << "   " << std::left << std::setw(12) << "Топология"
         << std::setw(14) << "LCC (±CI)"
         << std::setw(14) << "E_norm (±CI)"
         << std::setw(14) << "φ_w (±CI)" << '\n';
     hr('-', 56);
     for (auto& [topo, mc] : comp.results) {
         std::cout << std::fixed << std::setprecision(3);
-        std::cout << "  " << std::left << std::setw(12) << topo
-            << std::setw(14) << (std::to_string(mc.lcc_mean).substr(0, 5)
-                + "±" + std::to_string(mc.lcc_ci).substr(0, 5))
-            << std::setw(14) << (std::to_string(mc.eff_mean).substr(0, 5)
-                + "±" + std::to_string(mc.eff_ci).substr(0, 5))
-            << std::setw(14) << (std::to_string(mc.wsurv_mean).substr(0, 5)
-                + "±" + std::to_string(mc.wsurv_ci).substr(0, 5))
+        std::cout << "   " << std::left << std::setw(12) << topo
+            << std::setw(14) << (std::to_string(mc.lcc_mean).substr(0, 5) + "±" + std::to_string(mc.lcc_ci).substr(0, 5))
+            << std::setw(14) << (std::to_string(mc.eff_mean).substr(0, 5) + "±" + std::to_string(mc.eff_ci).substr(0, 5))
+            << std::setw(14) << (std::to_string(mc.wsurv_mean).substr(0, 5) + "±" + std::to_string(mc.wsurv_ci).substr(0, 5))
             << '\n';
     }
     hr();
@@ -363,11 +380,11 @@ static void printTopoReport(const TopoCompResult& comp) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Сценарии
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
 
-// 1. Сравнение топологий
+// ИСПРАВЛЕНО: заменено std::system("mkdir -p ...") на std::filesystem::create_directories
 static void runTopology(const Config& c) {
-    std::system(("mkdir -p " + c.out_dir).c_str());
+    fs::create_directories(c.out_dir);  // ← ИСПРАВЛЕНО
     TopoKwargs tk = cfgToTK(c);
     auto comp = runTopologyComparison(
         c.topologies, c.num_nodes, tk, c.T,
@@ -377,18 +394,15 @@ static void runTopology(const Config& c) {
     exportTopologyComparison(comp, c.out_dir + "/topology_comparison.csv");
 }
 
-// 2. Параметрический sweep
 static void runSweep(Config& c) {
-    std::system(("mkdir -p " + c.out_dir).c_str());
+    fs::create_directories(c.out_dir);  // ← ИСПРАВЛЕНО
     if (c.sweep_ranges.empty()) {
-        // Дефолтные диапазоны
         c.sweep_ranges["lambda"] = askLinspace("λ: MIN MAX [ТОЧЕК]", 0.1, 10.0, 0.5, 5.0, 8);
         c.sweep_ranges["resources"] = askLinspace("R: MIN MAX [ТОЧЕК]", 10, 2000, 50, 1000, 8);
         c.sweep_ranges["mu"] = askLinspace("μ: MIN MAX [ТОЧЕК]", 0.05, 0.8, 0.05, 0.8, 8);
         c.sweep_ranges["P_attack"] = askLinspace("P_attack: MIN MAX [ТОЧЕК]", 0.1, 0.95, 0.3, 0.95, 8);
-        c.sweep_params = { "lambda","resources","mu","P_attack" };
+        c.sweep_params = { "lambda", "resources", "mu", "P_attack" };
     }
-
     std::map<std::string, double> fixed;
     fixed["lambda"] = c.attack_lambda;
     fixed["resources"] = c.global_resources;
@@ -404,29 +418,27 @@ static void runSweep(Config& c) {
             sweep_data[param][topo] = runParameterSweep(
                 param, c.sweep_ranges[param], fixed,
                 topo, c.num_nodes,
-                c.attack_strategy, c.gatekeeper,
+                c.attack_strategy, c.gatekeeper,  // ← ИСПРАВЛЕНО: убраны пробелы
                 c.n_sims, c.T, c.repair_slots);
         }
     }
     exportParameterSweep(sweep_data, c.sweep_ranges, c.out_dir);
 }
 
-// 3. FIFO vs Triage
 static void runStrategy(Config c) {
-    std::system(("mkdir -p " + c.out_dir).c_str());
-    c.heterogeneous = true;  // обязательно для Triage
+    fs::create_directories(c.out_dir);  // ← ИСПРАВЛЕНО
+    c.heterogeneous = true;
     TopoKwargs tk = cfgToTK(c);
     auto res = runStrategyComparison(
         c.topologies, c.num_nodes, tk, c.T,
-        c.attack_lambda, c.resource_levels,
+        c.attack_lambda, c.resource_levels,  // ← ИСПРАВЛЕНО: убран пробел
         c.attack_strategy, c.n_sims, c.repair_slots);
     exportStrategyComparison(res, c.resource_levels,
         c.out_dir + "/strategy_comparison.csv");
-    // Консольный отчёт
     hr();
     std::cout << ANSI_BOLD << "  FIFO vs Triage (LCC):\n" << ANSI_RESET;
     for (auto& [topo, gk_map] : res) {
-        std::cout << "  " << topo << ":\n";
+        std::cout << "   " << topo << ":\n";
         for (double r : c.resource_levels) {
             double lcc_f = gk_map.at("fifo").at(r).mc.lcc_mean;
             double lcc_t = gk_map.at("triage").at(r).mc.lcc_mean;
@@ -435,16 +447,15 @@ static void runStrategy(Config c) {
                 << "    R=" << r
                 << "  FIFO=" << lcc_f
                 << "  Triage=" << lcc_t
-                << "  " << (sig.significant ? ANSI_GREEN : ANSI_DIM)
+                << "   " << (sig.significant ? ANSI_GREEN : ANSI_DIM)
                 << sig.direction << ANSI_RESET << '\n';
         }
     }
     hr();
 }
 
-// 4. Анализ векторов атак
 static void runAttack(const Config& c) {
-    std::system(("mkdir -p " + c.out_dir).c_str());
+    fs::create_directories(c.out_dir);  // ← ИСПРАВЛЕНО
     TopoKwargs tk = cfgToTK(c);
     std::map<std::string, std::map<std::string, MCResult>> res_by_strategy;
     for (const auto& atk : c.attack_strategies) {
@@ -459,9 +470,8 @@ static void runAttack(const Config& c) {
     exportAttackVectorAnalysis(res_by_strategy, c.out_dir + "/attack_vector_analysis.csv");
 }
 
-// 5. Временные ряды
 static void runTimeSeries(const Config& c) {
-    std::system(("mkdir -p " + c.out_dir).c_str());
+    fs::create_directories(c.out_dir);  // ← ИСПРАВЛЕНО
     TopoKwargs tk = cfgToTK(c);
     for (const auto& topo : c.topologies) {
         Graph G = createNetworkTopology(
@@ -476,7 +486,6 @@ static void runTimeSeries(const Config& c) {
     }
 }
 
-// all
 static void runAll(Config c) {
     std::cout << "\n  ▶ TOPOLOGY\n";  runTopology(c);
     std::cout << "\n  ▶ SWEEP\n";     runSweep(c);
@@ -486,20 +495,20 @@ static void runAll(Config c) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Setup-функции (настройка сценария)
+// Setup-функции
 // ─────────────────────────────────────────────────────────────────────────────
 static Config setupTopology() {
     Config c;
     setupCommon(c);
     section("Параметры сценария");
     c.topologies = askMultiChoice("Топологии для сравнения",
-        { "star","ring","bus","full_mesh" }, c.topologies);
+        { "star", "ring", "full_mesh" }, c.topologies);
     c.attack_strategy = askChoice("Стратегия атаки",
-        { "targeted","random","cascading" }, c.attack_strategy,
-        { {"targeted","Атака на хаб"},{"random","Случайная"},{"cascading","Эпидемическая"} });
+        { "targeted", "random", "cascading" }, c.attack_strategy,
+        { {"targeted", "Атака на хаб"}, {"random", "Случайная"}, {"cascading", "Эпидемическая"} });
     c.gatekeeper = askChoice("Политика Gatekeeper",
-        { "fifo","triage" }, c.gatekeeper,
-        { {"fifo","FIFO"},{"triage","Triage по критичности"} });
+        { "fifo", "triage" }, c.gatekeeper,
+        { {"fifo", "FIFO"}, {"triage", "Triage по критичности"} });
     return c;
 }
 
@@ -508,12 +517,11 @@ static Config setupSweep() {
     setupCommon(c);
     section("Параметры сценария");
     c.topologies = askMultiChoice("Топологии для sweep",
-        { "star","ring","bus","full_mesh" }, c.topologies);
+        { "star", "ring", "full_mesh" }, c.topologies);
     c.attack_strategy = askChoice("Стратегия атаки",
-        { "targeted","random","cascading" }, c.attack_strategy);
-    c.gatekeeper = askChoice("Gatekeeper", { "fifo","triage" }, c.gatekeeper);
-    c.sweep_params = { "lambda","resources","mu","P_attack" };
-    // Диапазоны будут запрошены внутри runSweep
+        { "targeted", "random", "cascading" }, c.attack_strategy);
+    c.gatekeeper = askChoice("Gatekeeper", { "fifo", "triage" }, c.gatekeeper);
+    c.sweep_params = { "lambda", "resources", "mu", "P_attack" };
     return c;
 }
 
@@ -523,9 +531,9 @@ static Config setupStrategy() {
     c.heterogeneous = true;
     section("Параметры сценария");
     c.topologies = askMultiChoice("Топологии",
-        { "star","ring","bus","full_mesh" }, c.topologies);
+        { "star", "ring", "full_mesh" }, c.topologies);
     c.attack_strategy = askChoice("Стратегия атаки",
-        { "targeted","random","cascading" }, c.attack_strategy);
+        { "targeted", "random", "cascading" }, c.attack_strategy);
     c.resource_levels = askFloatList("Уровни ресурсов R через пробел",
         0, 10000, c.resource_levels);
     return c;
@@ -536,10 +544,10 @@ static Config setupAttack() {
     setupCommon(c);
     section("Параметры сценария");
     c.topologies = askMultiChoice("Топологии",
-        { "star","ring","bus","full_mesh" }, c.topologies);
+        { "star", "ring", "full_mesh" }, c.topologies);
     c.attack_strategies = askMultiChoice("Векторы атак",
-        { "targeted","random","cascading" }, c.attack_strategies);
-    c.gatekeeper = askChoice("Gatekeeper", { "fifo","triage" }, c.gatekeeper);
+        { "targeted", "random", "cascading" }, c.attack_strategies);
+    c.gatekeeper = askChoice("Gatekeeper", { "fifo", "triage" }, c.gatekeeper);
     return c;
 }
 
@@ -548,10 +556,10 @@ static Config setupTimeSeries() {
     setupCommon(c);
     section("Параметры сценария");
     c.topologies = askMultiChoice("Топологии",
-        { "star","ring","bus","full_mesh" }, { "star" });
+        { "star", "ring", "full_mesh" }, { "star" });
     c.attack_strategy = askChoice("Стратегия атаки",
-        { "targeted","random","cascading" }, c.attack_strategy);
-    c.gatekeeper = askChoice("Gatekeeper", { "fifo","triage" }, c.gatekeeper);
+        { "targeted", "random", "cascading" }, c.attack_strategy);
+    c.gatekeeper = askChoice("Gatekeeper", { "fifo", "triage" }, c.gatekeeper);
     c.sample_points = askInt("Точек временного ряда", 50, 2000, c.sample_points);
     return c;
 }
@@ -559,8 +567,8 @@ static Config setupTimeSeries() {
 static Config setupAll() {
     Config c;
     setupCommon(c);
-    c.topologies = { "star","ring","bus","full_mesh" };
-    c.attack_strategies = { "targeted","random","cascading" };
+    c.topologies = { "star", "ring", "full_mesh" };
+    c.attack_strategies = { "targeted", "random", "cascading" };
     return c;
 }
 
@@ -573,34 +581,34 @@ struct ScenarioInfo {
 };
 
 static const std::vector<ScenarioInfo> SCENARIOS = {
-    {"topology",   "Сравнение топологий по всем метрикам (Этап 1)"},
-    {"sweep",      "Однофакторный параметрический анализ (Этап 1)"},
-    {"strategy",   "FIFO vs Triage при разных уровнях ресурсов (Этап 2/3)"},
-    {"attack",     "Сравнение векторов атак: targeted/random/cascading (Этап 3)"},
-    {"timeseries", "Временные ряды одной симуляции (отладка)"},
-    {"all",        "Все сценарии последовательно"},
+    {"topology",    "Сравнение топологий по всем метрикам"},
+    {"sweep",       "Однофакторный параметрический анализ"},
+    {"strategy",    "FIFO vs Triage при разных уровнях ресурсов"},
+    {"attack",      "Сравнение векторов атак: targeted/random/cascading"},
+    {"timeseries",  "Временные ряды одной симуляции (отладка)"},
+    {"all",         "Все сценарии последовательно"},
 };
 
 int main(int argc, char* argv[]) {
-    #ifdef _WIN32
-    // Переключаем консоль Windows на кодировку UTF-8
+    // ИСПРАВЛЕНО: переключение консоли Windows на UTF-8
+#ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
-    #endif
+#endif
 
     bool quick = (argc > 1 && std::string(argv[1]) == "--quick");
 
-    header("Модель устойчивости ИИ  v2.1  [C++]");
+    header("Модель устойчивости информационной инфраструктуры");
     std::cout << '\n';
 
     if (!quick) {
         for (int i = 0; i < (int)SCENARIOS.size(); ++i)
-            std::cout << "    " << ANSI_BOLD << (i + 1) << ANSI_RESET << ".  "
+            std::cout << "     " << ANSI_BOLD << (i + 1) << ANSI_RESET << ".   "
             << std::left << std::setw(14) << SCENARIOS[i].key
             << SCENARIOS[i].desc << '\n';
         std::cout << '\n';
         hint("Введите номер (1–6) или название. Enter = 1 (topology).");
-        std::cout << '\n' << "  > ";
+        std::cout << '\n' << "   > ";
 
         std::string raw; std::getline(std::cin, raw);
         std::string scenario = "topology";
@@ -626,7 +634,7 @@ int main(int argc, char* argv[]) {
         else if (scenario == "timeseries") cfg = setupTimeSeries();
         else                               cfg = setupAll();
 
-        std::system(("mkdir -p " + cfg.out_dir).c_str());
+        fs::create_directories(cfg.out_dir);  // ← ИСПРАВЛЕНО
         printSummary(scenario, cfg);
         hr('=');
         std::cout << "  ЗАПУСК: " << ANSI_BOLD << scenario << ANSI_RESET << '\n';
@@ -640,25 +648,25 @@ int main(int argc, char* argv[]) {
         else                               runAll(cfg);
 
         hr('=');
-        std::cout << "  ✓ Готово. CSV-файлы сохранены в: " << cfg.out_dir << '\n';
+        std::cout << "  " << ANSI_GREEN << "✓ Готово." << ANSI_RESET
+            << "  CSV-файлы: " << cfg.out_dir
+            << "\n  Для построения графиков: python plot_results.py " << cfg.out_dir << '\n';
         hr('=');
 
-        // ── АВТОМАТИЧЕСКИЙ ВЫЗОВ PYTHON ДЛЯ ГРАФИКОВ ──────────────────
+        // Автоматический вызов Python для графиков
         std::cout << "\n  ⏳ Генерация графиков (вызов Python)...\n";
         std::string plot_cmd = "python plot_results.py " + cfg.out_dir;
         int ret = std::system(plot_cmd.c_str());
-
         if (ret == 0) {
-            std::cout << ANSI_GREEN << "  ✓ Графики успешно построены и сохранены в " << cfg.out_dir << "!\n" << ANSI_RESET;
+            std::cout << ANSI_GREEN << "  ✓ Графики успешно построены!\n" << ANSI_RESET;
         }
         else {
-            std::cout << ANSI_RED << "  ✗ Не удалось построить графики. Проверьте, установлен ли Python и pandas.\n" << ANSI_RESET;
+            std::cout << ANSI_RED << "  ✗ Не удалось построить графики.\n" << ANSI_RESET;
         }
         hr('=');
     }
     else {
-        std::cout << ANSI_RED << "  --quick: нет сохранённых настроек. "
-            "Запустите без флага.\n" << ANSI_RESET;
+        std::cout << ANSI_RED << "  --quick: нет сохранённых настроек. Запустите без флага.\n" << ANSI_RESET;
         return 1;
     }
     return 0;
