@@ -50,7 +50,8 @@ void exportParameterSweep(
         f << "x_value";
         for (auto& [topo, _] : topo_map)
             f << "," << topo << "_lcc_mean," << topo << "_lcc_ci"
-              << "," << topo << "_eff_mean," << topo << "_eff_ci";
+              << "," << topo << "_eff_mean," << topo << "_eff_ci"
+              << "," << topo << "_wsurv_mean," << topo << "_wsurv_ci";
         f << "\n";
 
         const auto& xs = x_ranges.at(param);
@@ -58,7 +59,8 @@ void exportParameterSweep(
             f << xs[i];
             for (auto& [topo, sr] : topo_map) {
                 f << "," << sr.lcc_means[i] << "," << sr.lcc_ci[i]
-                  << "," << sr.eff_means[i] << "," << sr.eff_ci[i];
+                  << "," << sr.eff_means[i] << "," << sr.eff_ci[i]
+                  << "," << sr.wsurv_means[i] << "," << sr.wsurv_ci[i];
             }
             f << "\n";
         }

@@ -378,6 +378,33 @@ static void printTopoReport(const TopoCompResult& comp) {
     hr();
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Вывод таблицы результатов
+// ─────────────────────────────────────────────────────────────────────────────
+static void printResultsTable(const std::map<std::string, MCResult>& results) {
+    hr();
+    std::cout << ANSI_BOLD << "  Результаты:\n" << ANSI_RESET;
+    std::cout << "   " << std::left << std::setw(12) << "Топология"
+        << std::setw(16) << "LCC±CI"
+        << std::setw(16) << "Enorm±CI"
+        << std::setw(16) << "φw±CI" << '\n';
+    hr('-', 60);
+
+    for (const auto& [topo, mc] : results) {
+        std::cout << std::fixed << std::setprecision(3);
+        std::cout << "   " << std::left << std::setw(12) << topo
+            << std::setw(16) << (std::to_string(mc.lcc_mean).substr(0, 5) +
+                "±" + std::to_string(mc.lcc_ci).substr(0, 5))
+            << std::setw(16) << (std::to_string(mc.eff_mean).substr(0, 5) +
+                "±" + std::to_string(mc.eff_ci).substr(0, 5))
+            << std::setw(16) << (std::to_string(mc.wsurv_mean).substr(0, 5) +
+                "±" + std::to_string(mc.wsurv_ci).substr(0, 5))
+            << '\n';
+    }
+    hr();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Сценарии
 // ────────────────────────────────────────────────────────────────────────────
@@ -390,6 +417,7 @@ static void runTopology(const Config& c) {
         c.topologies, c.num_nodes, tk, c.T,
         c.attack_lambda, c.global_resources,
         c.attack_strategy, c.gatekeeper, c.n_sims, c.repair_slots);
+    printResultsTable(comp.results);
     printTopoReport(comp);
     exportTopologyComparison(comp, c.out_dir + "/topology_comparison.csv");
 }
@@ -422,6 +450,7 @@ static void runSweep(Config& c) {
                 c.n_sims, c.T, c.repair_slots);
         }
     }
+
     exportParameterSweep(sweep_data, c.sweep_ranges, c.out_dir);
 }
 

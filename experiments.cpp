@@ -257,6 +257,8 @@ SweepResult runParameterSweep(
     out.lcc_ci.reserve(param_values.size());
     out.eff_means.reserve(param_values.size());
     out.eff_ci.reserve(param_values.size());
+    out.wsurv_means.reserve(param_values.size());
+    out.wsurv_ci.reserve(param_values.size());
 
     for (double val : param_values) {
         double sim_lambda    = fixed_params.at("lambda");
@@ -283,6 +285,8 @@ SweepResult runParameterSweep(
         out.lcc_ci.push_back(r.lcc_ci);
         out.eff_means.push_back(r.eff_mean);
         out.eff_ci.push_back(r.eff_ci);
+        out.wsurv_means.push_back(r.wsurv_mean);
+        out.wsurv_ci.push_back(r.wsurv_ci);
     }
     return out;
 }

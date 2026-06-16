@@ -181,48 +181,61 @@ def plot_timeseries(out_dir):
 
 # 5. Параметрический Sweep (ЧБ-совместимый с разными маркерами)
 def plot_sweep(out_dir):
+    """Создаёт ДВА графика sweep: по LCC и по φ_w."""
     files = glob.glob(os.path.join(out_dir, "sweep_*.csv"))
     if not files:
         return
     
-    fig, axs = plt.subplots(2, 2, figsize=(14, 10))
-    axs = axs.flatten()
+    # Стили топологий
+    TOPO_STYLES = {
+        "full_mesh": {"color": "#1f77b4", "marker": "o", "ls": "-"},
+        "ring":      {"color": "#2ca02c", "marker": "s", "ls": "--"},
+        "star":      {"color": "#d62728", "marker": "^", "ls": "-."},
+    }
     
-    for i, f in enumerate(files[:4]):
-        df = pd.read_csv(f)
-        param = os.path.basename(f).replace("sweep_", "").replace(".csv", "")
-        ax = axs[i]
+    # Создаём два графика: LCC и Weighted Survivability
+    for metric_suffix, ylabel, filename in [
+        ('lcc', 'LCC', 'plot_sweep_lcc.png'),
+        ('wsurv', 'Взвешенная живучесть φ_w', 'plot_sweep_wsurv.png')
+    ]:
+        fig, axs = plt.subplots(2, 2, figsize=(14, 10))
+        axs = axs.flatten()
         
-        cols = [c for c in df.columns if c.endswith('_lcc_mean')]
-        for col in cols:
-            topo = col.replace('_lcc_mean', '').upper()
-            ci_col = col.replace('_mean', '_ci')
-            style = TOPO_STYLES.get(col.replace('_lcc_mean', ''), 
-                                    {"color": "gray", "marker": "o", "ls": "-"})
+        for i, f in enumerate(files[:4]):
+            df = pd.read_csv(f)
+            param = os.path.basename(f).replace("sweep_", "").replace(".csv", "")
+            ax = axs[i]
             
-            ax.plot(df['x_value'], df[col], 
-                    marker=style['marker'], 
-                    linestyle=style['ls'],
-                    linewidth=2,
-                    markersize=8,
-                    label=topo, 
-                    color=style['color'],
-                    markeredgecolor='black',
-                    markeredgewidth=0.5)
-            ax.fill_between(df['x_value'], 
-                           df[col]-df[ci_col], df[col]+df[ci_col], 
-                           color=style['color'], alpha=0.15)
+            cols = [c for c in df.columns if c.endswith(f'_{metric_suffix}_mean')]
+            for col in cols:
+                topo = col.replace(f'_{metric_suffix}_mean', '').upper()
+                ci_col = col.replace('_mean', '_ci')
+                style = TOPO_STYLES.get(col.replace(f'_{metric_suffix}_mean', ''), 
+                                        {"color": "gray", "marker": "o", "ls": "-"})
+                
+                ax.plot(df['x_value'], df[col], 
+                        marker=style['marker'], 
+                        linestyle=style['ls'],
+                        linewidth=2,
+                        markersize=8,
+                        label=topo, 
+                        color=style['color'],
+                        markeredgecolor='black',
+                        markeredgewidth=0.5)
+                ax.fill_between(df['x_value'], 
+                               df[col]-df[ci_col], df[col]+df[ci_col], 
+                               color=style['color'], alpha=0.15)
+            
+            ax.set_title(f"Sweep: {param}", fontsize=12, fontweight='bold')
+            ax.set_xlabel(param)
+            ax.set_ylabel(ylabel)
+            ax.grid(alpha=0.3, linestyle='--')
+            ax.legend(loc='best', frameon=True, fontsize=9)
         
-        ax.set_title(f"Sweep: {param}", fontsize=12, fontweight='bold')
-        ax.set_xlabel(param)
-        ax.set_ylabel("LCC")
-        ax.grid(alpha=0.3, linestyle='--')
-        ax.legend(loc='best', frameon=True, fontsize=9)
-    
-    plt.tight_layout()
-    plt.savefig(os.path.join(out_dir, "plot_sweep.png"), dpi=150)
-    plt.close()
-    print("  Сохранено: plot_sweep.png")
+        plt.tight_layout()
+        plt.savefig(os.path.join(out_dir, filename), dpi=150)
+        plt.close()
+        print(f"  Сохранено: {filename}")
 
 def main():
     out_dir = sys.argv[1] if len(sys.argv) > 1 else "results"

@@ -93,6 +93,8 @@ struct SweepResult {
     std::vector<double> lcc_ci;
     std::vector<double> eff_means;
     std::vector<double> eff_ci;
+    std::vector<double> wsurv_means;
+    std::vector<double> wsurv_ci;
 };
 SweepResult runParameterSweep(
     const std::string&         param_name,
