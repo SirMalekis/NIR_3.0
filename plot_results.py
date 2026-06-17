@@ -69,13 +69,16 @@ def plot_topology(df, out_dir):
 
 # 2. FIFO vs Triage (два графика: LCC и φ_w)
 def plot_strategy(df, out_dir):
-    """Создаёт ДВА графика: по LCC и по взвешенной живучести."""
+    """Создаёт ТРИ графика: по LCC, E_norm и φ_w."""
     topologies = df['topology'].unique()
     
-    for metric, ylabel, suffix in [
-        ('lcc_mean', 'LCC', 'lcc'),
-        ('wsurv_mean', 'Взвешенная живучесть φ_w', 'wsurv')
-    ]:
+    metrics_config = [
+        ('lcc_mean',    'LCC (связность)',                'lcc'),
+        ('eff_mean',    'E_norm (качество маршрутизации)', 'eff'),
+        ('wsurv_mean',  'Взвешенная живучесть φ_w',       'wsurv')
+    ]
+    
+    for metric, ylabel, suffix in metrics_config:
         ci_col = metric.replace('_mean', '_ci')
         
         fig, axs = plt.subplots(1, len(topologies), figsize=(6*len(topologies), 5), sharey=True)
@@ -101,6 +104,7 @@ def plot_strategy(df, out_dir):
             
             ax.set_title(f"Топология: {topo.upper()}")
             ax.set_xlabel("Ресурсы R")
+            ax.set_ylim(0, 1.05)
             ax.grid(alpha=0.3, linestyle='--')
             ax.legend()
             
@@ -112,19 +116,30 @@ def plot_strategy(df, out_dir):
         plt.close()
         print(f"  Сохранено: plot_strategy_{suffix}.png")
 
-# 3. Векторы атак (ДВА графика: LCC и φ_w) ✓ ИСПРАВЛЕНО
+# 3. Векторы атак (ТРИ графика: LCC, E_norm и φ_w)
 def plot_attack(df, out_dir):
-    """Создаёт ДВА графика attack: по LCC и по φ_w."""
+    """Создаёт ТРИ графика attack: по LCC, E_norm и φ_w."""
     strategies = df['attack_strategy'].unique()
     topologies = df['topology'].unique()
     
-    for metric, ylabel, suffix in [
-        ('lcc_mean', 'LCC', 'lcc'),
-        ('wsurv_mean', 'Взвешенная живучесть φ_w', 'wsurv')
-    ]:
+    ATTACK_COLORS = {
+        'targeted': '#e74c3c',    # красный
+        'random': '#3498db',      # синий
+        'cascading': '#2ecc71'    # зелёный
+    }
+    
+    # Три метрики для построения
+    metrics_config = [
+        ('lcc_mean',   'LCC (связность)',                'lcc'),
+        ('eff_mean',   'E_norm (качество маршрутизации)', 'eff'),
+        ('wsurv_mean', 'Взвешенная живучесть φ_w',       'wsurv')
+    ]
+    
+    for metric, ylabel, suffix in metrics_config:
         ci_col = metric.replace('_mean', '_ci')
         
-        fig, axs = plt.subplots(1, len(topologies), figsize=(6*len(topologies), 5), sharey=True)
+        fig, axs = plt.subplots(1, len(topologies), 
+                                figsize=(6*len(topologies), 5), sharey=True)
         if len(topologies) == 1:
             axs = [axs]
         
@@ -138,13 +153,14 @@ def plot_attack(df, out_dir):
                    for s in strategies]
             colors = [ATTACK_COLORS.get(s, 'gray') for s in strategies]
             
-            ax.bar(x, vals, yerr=cis, capsize=5, color=colors, alpha=0.8, edgecolor='black')
+            ax.bar(x, vals, yerr=cis, capsize=5, color=colors, 
+                   alpha=0.8, edgecolor='black')
             ax.set_xticks(x)
             ax.set_xticklabels([s.upper() for s in strategies], rotation=15)
             ax.set_title(f"Топология: {topo.upper()}")
             ax.set_ylabel(ylabel)
             ax.grid(axis='y', alpha=0.3, linestyle='--')
-            ax.set_ylim(0, 1.0)
+            ax.set_ylim(0, 1.05)
         
         if len(axs) > 0:
             axs[0].set_ylabel(ylabel)
@@ -184,15 +200,26 @@ def plot_timeseries(out_dir):
 
 # 5. Параметрический Sweep (ЧБ-совместимый с разными маркерами)
 def plot_sweep(out_dir):
-    """Создаёт ДВА графика sweep: по LCC и по φ_w."""
+    """Создаёт ТРИ графика sweep: по LCC, E_norm и φ_w."""
     files = glob.glob(os.path.join(out_dir, "sweep_*.csv"))
     if not files:
         return
     
-    for metric_suffix, ylabel, filename in [
-        ('lcc', 'LCC', 'plot_sweep_lcc.png'),
-        ('wsurv', 'Взвешенная живучесть φ_w', 'plot_sweep_wsurv.png')
-    ]:
+    # Стили топологий (ЧБ-совместимые)
+    TOPO_STYLES = {
+        "full_mesh": {"color": "#1f77b4", "marker": "o", "ls": "-"},
+        "ring":      {"color": "#2ca02c", "marker": "s", "ls": "--"},
+        "star":      {"color": "#d62728", "marker": "^", "ls": "-."},
+    }
+    
+    # Три метрики для построения
+    metrics_config = [
+        ('lcc',   'LCC (связность)',             'plot_sweep_lcc.png'),
+        ('eff',   'E_norm (качество маршрутизации)', 'plot_sweep_eff.png'),
+        ('wsurv', 'Взвешенная живучесть φ_w',    'plot_sweep_wsurv.png')
+    ]
+    
+    for metric_suffix, ylabel, filename in metrics_config:
         fig, axs = plt.subplots(2, 2, figsize=(14, 10))
         axs = axs.flatten()
         
@@ -201,7 +228,15 @@ def plot_sweep(out_dir):
             param = os.path.basename(f).replace("sweep_", "").replace(".csv", "")
             ax = axs[i]
             
+            # Ищем колонки для текущей метрики
             cols = [c for c in df.columns if c.endswith(f'_{metric_suffix}_mean')]
+            
+            if not cols:
+                ax.text(0.5, 0.5, f"Нет данных для {metric_suffix}", 
+                       ha='center', va='center', transform=ax.transAxes)
+                ax.set_title(f"Sweep: {param}")
+                continue
+            
             for col in cols:
                 topo = col.replace(f'_{metric_suffix}_mean', '').upper()
                 ci_col = col.replace('_mean', '_ci')
@@ -224,6 +259,7 @@ def plot_sweep(out_dir):
             ax.set_title(f"Sweep: {param}", fontsize=12, fontweight='bold')
             ax.set_xlabel(param)
             ax.set_ylabel(ylabel)
+            ax.set_ylim(0, 1.05)
             ax.grid(alpha=0.3, linestyle='--')
             ax.legend(loc='best', frameon=True, fontsize=9)
         

@@ -81,7 +81,9 @@ void exportStrategyComparison(const StrategyResults& res,
     if (!f) { std::cerr << "Ошибка открытия: " << path << "\n"; return; }
 
     f << std::fixed << std::setprecision(6);
-    f << "topology,gatekeeper,R,lcc_mean,lcc_ci,wsurv_mean,wsurv_ci,sig_direction\n";
+    // ✓ ДОБАВЛЕНО: eff_mean и eff_ci
+    f << "topology,gatekeeper,R,lcc_mean,lcc_ci,eff_mean,eff_ci,wsurv_mean,wsurv_ci,sig_direction\n";
+
     for (auto& [topo, gk_map] : res) {
         for (auto& [gk, r_map] : gk_map) {
             for (double r : resource_levels) {
@@ -89,6 +91,7 @@ void exportStrategyComparison(const StrategyResults& res,
                 const auto& sp = r_map.at(r);
                 f << topo << "," << gk << "," << r << ","
                     << sp.mc.lcc_mean << "," << sp.mc.lcc_ci << ","
+                    << sp.mc.eff_mean << "," << sp.mc.eff_ci << ","  // ← ДОБАВЛЕНО
                     << sp.mc.wsurv_mean << "," << sp.mc.wsurv_ci << ","
                     << sp.sig.direction << "\n";
             }
@@ -105,11 +108,14 @@ void exportAttackVectorAnalysis(
     if (!f) { std::cerr << "Ошибка открытия: " << path << "\n"; return; }
 
     f << std::fixed << std::setprecision(6);
-    f << "attack_strategy,topology,lcc_mean,lcc_ci,wsurv_mean,wsurv_ci\n";
+    // ✓ ДОБАВЛЕНО: eff_mean и eff_ci
+    f << "attack_strategy,topology,lcc_mean,lcc_ci,eff_mean,eff_ci,wsurv_mean,wsurv_ci\n";
+
     for (auto& [strat, topo_map] : res_by_strategy)
         for (auto& [topo, mc] : topo_map)
             f << strat << "," << topo << ","
             << mc.lcc_mean << "," << mc.lcc_ci << ","
+            << mc.eff_mean << "," << mc.eff_ci << ","   // ← ДОБАВЛЕНО
             << mc.wsurv_mean << "," << mc.wsurv_ci << "\n";
 
     std::cout << "Сохранено: " << path << "\n";

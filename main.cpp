@@ -21,11 +21,10 @@ main.cpp — Интерактивное меню управления симул
 #include <iomanip>
 #include <limits>
 #include <cstdlib>
-#include <filesystem>  // ← ДОБАВЛЕНО: для create_directories
+#include <filesystem>
 
 #ifdef _WIN32
-#include <windows.h>   // ← ДОБАВЛЕНО: для SetConsoleOutputCP
-// После SetConsoleOutputCP(CP_UTF8) можно использовать настоящие ANSI-коды
+#include <windows.h>
 #define ANSI_RESET    "\033[0m"
 #define ANSI_BOLD     "\033[1m"
 #define ANSI_GREEN    "\033[92m"
@@ -53,12 +52,11 @@ static void hr(char c = '-', int w = 68) {
     std::cout << '\n';
 }
 
-// ИСПРАВЛЕНО: защита от отрицательного pad (UTF-8 + длинные заголовки)
 static void header(const std::string& title) {
     hr('=');
     int title_len = (int)title.size();
     int pad = 68 - title_len - 2;
-    if (pad < 0) pad = 0;  // ← КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ
+    if (pad < 0) pad = 0;
     pad /= 2;
     std::cout << "   " << std::string(pad, ' ')
         << ANSI_BOLD << title << ANSI_RESET << '\n';
@@ -112,7 +110,6 @@ static double askFloat(const std::string& prompt, double lo, double hi, double d
             std::cout << "  │   " << ANSI_GREEN << "Принято: " << def << ANSI_RESET << '\n';
             return def;
         }
-        // ИСПРАВЛЕНО: поддержка запятой как десятичного разделителя
         std::replace(raw.begin(), raw.end(), ',', '.');
         try {
             double val = std::stod(raw);
@@ -178,7 +175,6 @@ static std::vector<std::string> askMultiChoice(const std::string& prompt,
         std::string token;
         bool ok = true;
         while (std::getline(ss, token, ',')) {
-            // Убираем пробелы
             while (!token.empty() && token.front() == ' ') token.erase(token.begin());
             while (!token.empty() && token.back() == ' ')  token.pop_back();
             if (std::find(options.begin(), options.end(), token) == options.end()) {
@@ -215,7 +211,6 @@ static bool askBool(const std::string& prompt, bool def) {
     }
 }
 
-// ИСПРАВЛЕНО: поддержка запятой как десятичного разделителя в linspace
 static std::vector<double> askLinspace(const std::string& prompt,
     double lo, double hi,
     double def_lo, double def_hi, int def_n) {
@@ -232,7 +227,6 @@ static std::vector<double> askLinspace(const std::string& prompt,
             std::cout << "  │   " << ANSI_GREEN << "Принято: linspace(" << def_lo << ", " << def_hi << ", " << def_n << ")" << ANSI_RESET << '\n';
             return r;
         }
-        // ИСПРАВЛЕНО: замена запятой на точку для русской локали
         std::replace(raw.begin(), raw.end(), ',', '.');
         std::istringstream ss(raw);
         double v_min, v_max; int n_pts = def_n;
@@ -330,7 +324,7 @@ static TopoKwargs cfgToTK(const Config& c) {
 static void setupCommon(Config& c) {
     section("Базовые параметры");
     c.num_nodes = askInt("Количество узлов N", 5, 200, c.num_nodes);
-    c.n_sims = askInt("Симуляций Монте-Карло (n_sims)", 5, 500, c.n_sims);
+    c.n_sims = askInt("Симуляций Монте-Карло (n_sims)", 1, 500, c.n_sims);
     c.T = askFloat("Горизонт моделирования T", 10.0, 1000.0, c.T);
     c.attack_lambda = askFloat("Интенсивность атак λ (атак/ед.вр.)", 0.01, 20.0, c.attack_lambda);
     c.global_resources = askFloat("Глобальный ресурс R_total", 0.0, 10000.0, c.global_resources);
@@ -356,8 +350,8 @@ static void printSummary(const std::string& scenario, const Config& c) {
     hr();
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Консольный отчёт по топологиям
+// ─────────────────────────────────────────────────────────────────────────────
+// Консольные отчёты
 // ─────────────────────────────────────────────────────────────────────────────
 static void printTopoReport(const TopoCompResult& comp) {
     hr();
@@ -378,55 +372,45 @@ static void printTopoReport(const TopoCompResult& comp) {
     hr();
 }
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Вывод таблицы результатов
-// ─────────────────────────────────────────────────────────────────────────────
-static void printResultsTable(const std::map<std::string, MCResult>& results) {
+// ── НОВОЕ: Вывод статистики временных рядов ──────────────────────────────────
+static void printTimeSeriesStats(const std::string& topo, const SimResult& res) {
     hr();
-    std::cout << ANSI_BOLD << "  Результаты:\n" << ANSI_RESET;
-    std::cout << "   " << std::left << std::setw(12) << "Топология"
-        << std::setw(16) << "LCC±CI"
-        << std::setw(16) << "Enorm±CI"
-        << std::setw(16) << "φw±CI" << '\n';
+    std::cout << ANSI_BOLD << "  Временные ряды — " << topo << ANSI_RESET << '\n';
     hr('-', 60);
 
-    for (const auto& [topo, mc] : results) {
-        std::cout << std::fixed << std::setprecision(3);
-        std::cout << "   " << std::left << std::setw(12) << topo
-            << std::setw(16) << (std::to_string(mc.lcc_mean).substr(0, 5) +
-                "±" + std::to_string(mc.lcc_ci).substr(0, 5))
-            << std::setw(16) << (std::to_string(mc.eff_mean).substr(0, 5) +
-                "±" + std::to_string(mc.eff_ci).substr(0, 5))
-            << std::setw(16) << (std::to_string(mc.wsurv_mean).substr(0, 5) +
-                "±" + std::to_string(mc.wsurv_ci).substr(0, 5))
-            << '\n';
-    }
+    auto mean_vec = [](const std::vector<double>& v) {
+        return v.empty() ? 0.0 : std::accumulate(v.begin(), v.end(), 0.0) / v.size();
+        };
+
+    std::cout << std::fixed << std::setprecision(4);
+    std::cout << "    LCC (среднее)            : " << mean_vec(res.lcc_history) << '\n';
+    std::cout << "    E_norm (среднее)         : " << mean_vec(res.eff_norm_history) << '\n';
+    std::cout << "    Взвеш. живучесть (сред.) : " << mean_vec(res.weighted_surv_history) << '\n';
+    std::cout << "    Первый отказ (время)     : " << res.first_failure_time << '\n';
+    std::cout << "    Потреблено ресурсов      : " << res.resources_consumed << '\n';
+    std::cout << "    Истощение ресурсов       : " << (res.global_resource_exhausted ? "ДА" : "НЕТ") << '\n';
+    std::cout << "    Успешных восстановлений  : " << res.recoveries_success << '\n';
+    std::cout << "    Неудачных попыток        : " << res.recoveries_failed << '\n';
     hr();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Сценарии
-// ────────────────────────────────────────────────────────────────────────────
-
-// ИСПРАВЛЕНО: заменено std::system("mkdir -p ...") на std::filesystem::create_directories
+// ─────────────────────────────────────────────────────────────────────────────
 static void runTopology(const Config& c) {
-    fs::create_directories(c.out_dir);  // ← ИСПРАВЛЕНО
+    fs::create_directories(c.out_dir);
     TopoKwargs tk = cfgToTK(c);
     auto comp = runTopologyComparison(
         c.topologies, c.num_nodes, tk, c.T,
         c.attack_lambda, c.global_resources,
         c.attack_strategy, c.gatekeeper, c.n_sims, c.repair_slots);
-    printResultsTable(comp.results);
     printTopoReport(comp);
     exportTopologyComparison(comp, c.out_dir + "/topology_comparison.csv");
 }
 
-// 2. Параметрический sweep
 static void runSweep(Config& c) {
-    std::system(("mkdir -p " + c.out_dir).c_str());
+    fs::create_directories(c.out_dir);  // ← ИСПРАВЛЕНО: было std::system("mkdir -p ...")
     if (c.sweep_ranges.empty()) {
-        // Дефолтные диапазоны
         c.sweep_ranges["lambda"] = askLinspace("λ: MIN MAX [ТОЧЕК]", 0.1, 10.0, 0.5, 5.0, 8);
         c.sweep_ranges["resources"] = askLinspace("R: MIN MAX [ТОЧЕК]", 10, 2000, 50, 1000, 8);
         c.sweep_ranges["mu"] = askLinspace("μ: MIN MAX [ТОЧЕК]", 0.05, 0.8, 0.05, 0.8, 8);
@@ -452,19 +436,14 @@ static void runSweep(Config& c) {
                 c.n_sims, c.T, c.repair_slots);
         }
 
-        // ── ВЫВОД ТАБЛИЦЫ ДЛЯ LCC ─────────────────────────────────────
         hr();
         std::cout << ANSI_BOLD << "  Sweep: " << param << " (LCC)" << ANSI_RESET << '\n';
-
-        // Правильный порядок: STAR, RING, FULL_MESH (по возрастанию устойчивости)
         std::vector<std::string> ordered_topos = { "star", "ring", "full_mesh" };
-
         std::cout << "   " << std::left << std::setw(10) << "X_value"
             << std::setw(15) << "STAR"
             << std::setw(15) << "RING"
             << std::setw(15) << "FULL_MESH" << '\n';
         hr('-', 58);
-
         const auto& xs = c.sweep_ranges[param];
         for (int i = 0; i < (int)xs.size(); ++i) {
             std::cout << std::fixed << std::setprecision(2);
@@ -479,14 +458,12 @@ static void runSweep(Config& c) {
         }
         hr();
 
-        // ── ВЫВОД ТАБЛИЦЫ ДЛЯ φ_w (ВЗВЕШЕННАЯ ЖИВУЧЕСТЬ) ─────────────
-        std::cout << "\n" << ANSI_BOLD << "  Sweep: " << param << " (Weighted Survivability φ_w)" << ANSI_RESET << '\n';
+        std::cout << "\n" << ANSI_BOLD << "  Sweep: " << param << " (φ_w)" << ANSI_RESET << '\n';
         std::cout << "   " << std::left << std::setw(10) << "X_value"
             << std::setw(15) << "STAR"
             << std::setw(15) << "RING"
             << std::setw(15) << "FULL_MESH" << '\n';
         hr('-', 58);
-
         for (int i = 0; i < (int)xs.size(); ++i) {
             std::cout << std::fixed << std::setprecision(2);
             std::cout << "   " << std::left << std::setw(10) << xs[i];
@@ -499,42 +476,76 @@ static void runSweep(Config& c) {
             std::cout << '\n';
         }
         hr();
+        
+        std::cout << "\n" << ANSI_BOLD << "  Sweep: " << param << " (E_norm)" << ANSI_RESET << '\n';
+        std::cout << "   " << std::left << std::setw(10) << "X_value"
+            << std::setw(15) << "STAR"
+            << std::setw(15) << "RING"
+            << std::setw(15) << "FULL_MESH" << '\n';
+        hr('-', 58);
+
+        for (int i = 0; i < (int)xs.size(); ++i) {
+            std::cout << std::fixed << std::setprecision(2);
+            std::cout << "   " << std::left << std::setw(10) << xs[i];
+            for (const auto& topo : ordered_topos) {
+                if (sweep_data[param].count(topo)) {
+                    double eff = sweep_data[param][topo].eff_means[i];
+                    std::cout << std::setw(15) << std::setprecision(3) << eff;
+                }
+            }
+            std::cout << '\n';
+        }
+        hr();
         std::cout << "\n";
     }
     exportParameterSweep(sweep_data, c.sweep_ranges, c.out_dir);
 }
 
 static void runStrategy(Config c) {
-    fs::create_directories(c.out_dir);  // ← ИСПРАВЛЕНО
+    fs::create_directories(c.out_dir);
     c.heterogeneous = true;
     TopoKwargs tk = cfgToTK(c);
     auto res = runStrategyComparison(
         c.topologies, c.num_nodes, tk, c.T,
-        c.attack_lambda, c.resource_levels,  // ← ИСПРАВЛЕНО: убран пробел
+        c.attack_lambda, c.resource_levels,
         c.attack_strategy, c.n_sims, c.repair_slots);
     exportStrategyComparison(res, c.resource_levels,
         c.out_dir + "/strategy_comparison.csv");
     hr();
-    std::cout << ANSI_BOLD << "  FIFO vs Triage (LCC):\n" << ANSI_RESET;
+    std::cout << ANSI_BOLD << "  FIFO vs Triage — результаты:\n" << ANSI_RESET;
+
     for (auto& [topo, gk_map] : res) {
-        std::cout << "   " << topo << ":\n";
+        std::cout << "\n   [" << topo << "]\n";
+        std::cout << "   " << std::left << std::setw(8) << "R"
+            << std::setw(12) << "LCC(F)" << std::setw(12) << "LCC(T)"
+            << std::setw(12) << "Enorm(F)" << std::setw(12) << "Enorm(T)"
+            << std::setw(12) << "φw(F)" << std::setw(12) << "φw(T)"
+            << std::setw(10) << "Знач." << '\n';
+        hr('-', 88);
+
         for (double r : c.resource_levels) {
-            double lcc_f = gk_map.at("fifo").at(r).mc.lcc_mean;
-            double lcc_t = gk_map.at("triage").at(r).mc.lcc_mean;
-            auto& sig = gk_map.at("fifo").at(r).sig;
-            std::cout << std::fixed << std::setprecision(3)
-                << "    R=" << r
-                << "  FIFO=" << lcc_f
-                << "  Triage=" << lcc_t
-                << "   " << (sig.significant ? ANSI_GREEN : ANSI_DIM)
+            auto& fifo_pt = gk_map.at("fifo").at(r);
+            auto& triage_pt = gk_map.at("triage").at(r);
+            auto& sig = fifo_pt.sig;
+
+            std::cout << std::fixed << std::setprecision(3);
+            std::cout << "   " << std::setw(8) << r
+                << std::setw(12) << fifo_pt.mc.lcc_mean
+                << std::setw(12) << triage_pt.mc.lcc_mean
+                << std::setw(12) << fifo_pt.mc.eff_mean
+                << std::setw(12) << triage_pt.mc.eff_mean
+                << std::setw(12) << fifo_pt.mc.wsurv_mean
+                << std::setw(12) << triage_pt.mc.wsurv_mean
+                << std::setw(10) << (sig.significant ? ANSI_GREEN : ANSI_DIM)
                 << sig.direction << ANSI_RESET << '\n';
         }
     }
     hr();
 }
 
+// ── ИСПРАВЛЕНО: добавлен вывод таблицы результатов ───────────────────────────
 static void runAttack(const Config& c) {
-    fs::create_directories(c.out_dir);  // ← ИСПРАВЛЕНО
+    fs::create_directories(c.out_dir);
     TopoKwargs tk = cfgToTK(c);
     std::map<std::string, std::map<std::string, MCResult>> res_by_strategy;
 
@@ -545,9 +556,7 @@ static void runAttack(const Config& c) {
             c.attack_lambda, c.global_resources,
             atk, c.gatekeeper, c.n_sims, c.repair_slots);
 
-        // ── ДОБАВЛЕНО: Вывод результатов ──────────────────────
-        printTopoReport(comp);  // Используем существующую функцию
-        // ─────────────────────────────────────────────────────
+        printTopoReport(comp);  // ← вывод таблицы
 
         for (auto& [topo, mc] : comp.results)
             res_by_strategy[atk][topo] = mc;
@@ -555,8 +564,9 @@ static void runAttack(const Config& c) {
     exportAttackVectorAnalysis(res_by_strategy, c.out_dir + "/attack_vector_analysis.csv");
 }
 
+// ── ИСПРАВЛЕНО: добавлен вывод статистики временных рядов ────────────────────
 static void runTimeSeries(const Config& c) {
-    fs::create_directories(c.out_dir);  // ← ИСПРАВЛЕНО
+    fs::create_directories(c.out_dir);
     TopoKwargs tk = cfgToTK(c);
     for (const auto& topo : c.topologies) {
         Graph G = createNetworkTopology(
@@ -567,6 +577,9 @@ static void runTimeSeries(const Config& c) {
             G, c.T, c.attack_lambda, c.global_resources,
             c.attack_strategy, c.gatekeeper,
             c.repair_slots, c.sample_points, 42);
+
+        printTimeSeriesStats(topo, res);  // ← вывод статистики
+
         exportTimeSeries(res, c.out_dir + "/timeseries_" + topo + ".csv");
     }
 }
@@ -675,7 +688,6 @@ static const std::vector<ScenarioInfo> SCENARIOS = {
 };
 
 int main(int argc, char* argv[]) {
-    // ИСПРАВЛЕНО: переключение консоли Windows на UTF-8
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
@@ -683,7 +695,7 @@ int main(int argc, char* argv[]) {
 
     bool quick = (argc > 1 && std::string(argv[1]) == "--quick");
 
-    header("Модель устойчивости информационной инфраструктуры");
+    header("Модель устойчивости ИИ  v2.1  [C++]");
     std::cout << '\n';
 
     if (!quick) {
@@ -719,7 +731,7 @@ int main(int argc, char* argv[]) {
         else if (scenario == "timeseries") cfg = setupTimeSeries();
         else                               cfg = setupAll();
 
-        fs::create_directories(cfg.out_dir);  // ← ИСПРАВЛЕНО
+        fs::create_directories(cfg.out_dir);
         printSummary(scenario, cfg);
         hr('=');
         std::cout << "  ЗАПУСК: " << ANSI_BOLD << scenario << ANSI_RESET << '\n';
@@ -738,7 +750,6 @@ int main(int argc, char* argv[]) {
             << "\n  Для построения графиков: python plot_results.py " << cfg.out_dir << '\n';
         hr('=');
 
-        // Автоматический вызов Python для графиков
         std::cout << "\n  ⏳ Генерация графиков (вызов Python)...\n";
         std::string plot_cmd = "python plot_results.py " + cfg.out_dir;
         int ret = std::system(plot_cmd.c_str());
