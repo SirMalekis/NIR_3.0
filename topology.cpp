@@ -26,14 +26,14 @@ static double clamp(double v, double lo, double hi) {
 }
 
 static double jitter(std::mt19937_64& rng, double base, double spread,
-                     double lo = 0.01, double hi = 0.99) {
+    double lo = 0.01, double hi = 0.99) {
     std::uniform_real_distribution<double> d(-spread, spread);
     return clamp(base + d(rng), lo, hi);
 }
 
 // Дискретное сэмплирование из categorical distribution
 static std::string sampleType(std::mt19937_64& rng,
-                               const std::unordered_map<std::string,double>& mix) {
+    const std::unordered_map<std::string, double>& mix) {
     std::uniform_real_distribution<double> u(0.0, 1.0);
     double r = u(rng), cum = 0.0;
     for (auto& [type, prob] : mix) {
@@ -65,19 +65,40 @@ Graph createNetworkTopology(
     std::uniform_real_distribution<double> u01(-0.01, 0.01);
 
     Graph G;
-    G.topology  = topology_type;
+    G.topology = topology_type;
     G.num_nodes = num_nodes;
     G.nodes.resize(num_nodes);
     G.adj.resize(num_nodes);
 
+    // ── 1. СНАЧАЛА создаём рёбра ────────────────────────────────────────
+    if (topology_type == "star") {
+        for (int i = 1; i < num_nodes; ++i)
+            G.addEdge(0, i);
+    }
+    else if (topology_type == "full_mesh") {
+        for (int i = 0; i < num_nodes; ++i)
+            for (int j = i + 1; j < num_nodes; ++j)
+                G.addEdge(i, j);
+    }
+    else if (topology_type == "ring") {
+        for (int i = 0; i < num_nodes; ++i)
+            G.addEdge(i, (i + 1) % num_nodes);
+    }
+    else {
+        throw std::invalid_argument(
+            "Неизвестная топология: '" + topology_type +
+            "'. Допустимые: star, full_mesh, ring.");
+    }
+
+    // ── 2. ТЕПЕРЬ назначаем атрибуты узлам ──────────────────────────────
     for (int i = 0; i < num_nodes; ++i) {
         Node& n = G.nodes[i];
-        n.id    = i;
+        n.id = i;
         n.state = 1;
         n.recovery_end_time = -1.0;
 
         if (heterogeneous) {
-            // 1. Собираем степени всех узлов
+            // 1. Собираем степени всех узлов (ТЕПЕРЬ ОНИ КОРРЕКТНЫ!)
             std::vector<std::pair<int, int>> degree_with_id(num_nodes);
             for (int i = 0; i < num_nodes; ++i) {
                 degree_with_id[i] = { G.degree(i), i };
@@ -90,6 +111,13 @@ Graph createNetworkTopology(
             // 3. Назначаем типы по рангу
             int n_servers = std::max(1, (int)(num_nodes * 0.15));
             int n_switches = std::max(1, (int)(num_nodes * 0.20));
+
+            // ── ДОБАВЛЕНО: Множители для sweep ─────────────────────────────
+            // Базовые значения (0.20 для mu, 0.60 для P_attack) используются
+            // как точка отсчёта. Если sweep задаёт base_mu=0.40 (в 2 раза больше),
+            // то все mu узлов удваиваются, сохраняя пропорции между типами.
+            double mu_mult = (base_mu > 0.0) ? (base_mu / 0.20) : 1.0;
+            double p_attack_mult = (base_P_attack > 0.0) ? (base_P_attack / 0.60) : 1.0;
 
             for (int rank = 0; rank < num_nodes; ++rank) {
                 int node_id = degree_with_id[rank].second;
@@ -108,30 +136,25 @@ Graph createNetworkTopology(
 
                 const NodeProfile& prof = NODE_PROFILES.at(ntype);
                 n.node_type = ntype;
-                n.P_attack = jitter(rng, prof.P_attack, 0.05);
+
+                // ── ИЗМЕНЕНО: Применяем множители ──────────────────────────
+                n.P_attack = jitter(rng, prof.P_attack * p_attack_mult, 0.05);
                 n.P_recovery = jitter(rng, prof.P_recovery, 0.05);
-                n.mu = clamp(prof.mu + std::uniform_real_distribution<double>(-0.02, 0.02)(rng), 0.01, 1.0);
+                n.mu = clamp(prof.mu * mu_mult + std::uniform_real_distribution<double>(-0.02, 0.02)(rng), 0.01, 1.0);
                 n.C_repair = prof.C_repair;
                 n.weight = prof.weight;
             }
         }
+        else {
+            // Гомогенный режим
+            n.node_type = "host";
+            n.P_attack = clamp(base_P_attack + u05(rng), 0.01, 0.99);
+            n.P_recovery = clamp(base_P_recovery + u05(rng), 0.01, 0.99);
+            n.mu = clamp(base_mu + u01(rng), 0.01, 1.00);
+            n.C_repair = base_C_repair;
+            n.weight = base_weight;
+        }
     }
 
-    // Рёбра
-    if (topology_type == "star") {
-        for (int i = 1; i < num_nodes; ++i)
-            G.addEdge(0, i);
-    } else if (topology_type == "full_mesh") {
-        for (int i = 0; i < num_nodes; ++i)
-            for (int j = i+1; j < num_nodes; ++j)
-                G.addEdge(i, j);
-    } else if (topology_type == "ring") {
-        for (int i = 0; i < num_nodes; ++i)
-            G.addEdge(i, (i+1) % num_nodes);
-    } else {
-        throw std::invalid_argument(
-            "Неизвестная топология: '" + topology_type +
-            "'. Допустимые: star, full_mesh, ring.");
-    }
     return G;
 }

@@ -18,7 +18,7 @@ plt.rcParams.update({
     "figure.dpi": 120
 })
 
-# Стили топологий для ЧБ-совместимости (разные маркеры + стили линий)
+# Стили топологий для ЧБ-совместимости
 TOPO_STYLES = {
     "full_mesh": {"color": "#1f77b4", "marker": "o", "ls": "-",  "hatch": "///", "label": "FULL_MESH"},
     "ring":      {"color": "#2ca02c", "marker": "s", "ls": "--", "hatch": "\\\\", "label": "RING"},
@@ -27,9 +27,9 @@ TOPO_STYLES = {
 
 # Цвета для атак
 ATTACK_COLORS = {
-    'targeted': '#e74c3c',    # красный
-    'random': '#3498db',      # синий
-    'cascading': '#2ecc71'    # зелёный
+    'targeted': '#e74c3c',
+    'random': '#3498db',
+    'cascading': '#2ecc71'
 }
 
 def safe_read(path):
@@ -72,7 +72,6 @@ def plot_strategy(df, out_dir):
     """Создаёт ДВА графика: по LCC и по взвешенной живучести."""
     topologies = df['topology'].unique()
     
-    # Создаём два графика: LCC и Weighted Survivability
     for metric, ylabel, suffix in [
         ('lcc_mean', 'LCC', 'lcc'),
         ('wsurv_mean', 'Взвешенная живучесть φ_w', 'wsurv')
@@ -113,43 +112,47 @@ def plot_strategy(df, out_dir):
         plt.close()
         print(f"  Сохранено: plot_strategy_{suffix}.png")
 
-# 3. Векторы атак (исправленная версия с правильной группировкой)
+# 3. Векторы атак (ДВА графика: LCC и φ_w) ✓ ИСПРАВЛЕНО
 def plot_attack(df, out_dir):
-    """Исправленная версия с правильной группировкой."""
+    """Создаёт ДВА графика attack: по LCC и по φ_w."""
     strategies = df['attack_strategy'].unique()
     topologies = df['topology'].unique()
     
-    # Создаём фигуру с подграфиками — по одному на топологию
-    fig, axs = plt.subplots(1, len(topologies), figsize=(6*len(topologies), 5), sharey=True)
-    if len(topologies) == 1:
-        axs = [axs]
-    
-    for ax, topo in zip(axs, topologies):
-        sub = df[df['topology'] == topo]
-        x = range(len(strategies))
+    for metric, ylabel, suffix in [
+        ('lcc_mean', 'LCC', 'lcc'),
+        ('wsurv_mean', 'Взвешенная живучесть φ_w', 'wsurv')
+    ]:
+        ci_col = metric.replace('_mean', '_ci')
         
-        # Для каждой топологии рисуем столбцы по атакам
-        vals = [sub[sub['attack_strategy']==s]['lcc_mean'].values[0] 
-                for s in strategies]
-        cis = [sub[sub['attack_strategy']==s]['lcc_ci'].values[0] 
-               for s in strategies]
-        colors = [ATTACK_COLORS.get(s, 'gray') for s in strategies]
+        fig, axs = plt.subplots(1, len(topologies), figsize=(6*len(topologies), 5), sharey=True)
+        if len(topologies) == 1:
+            axs = [axs]
         
-        ax.bar(x, vals, yerr=cis, capsize=5, color=colors, alpha=0.8, edgecolor='black')
-        ax.set_xticks(x)
-        ax.set_xticklabels([s.upper() for s in strategies], rotation=15)
-        ax.set_title(f"Топология: {topo.upper()}")
-        ax.set_ylabel("LCC")
-        ax.grid(axis='y', alpha=0.3, linestyle='--')
-        ax.set_ylim(0, 1.0)
-    
-    if len(axs) > 0:
-        axs[0].set_ylabel("LCC")
-    plt.suptitle("Векторы атак по топологиям")
-    plt.tight_layout()
-    plt.savefig(os.path.join(out_dir, "plot_attack.png"), dpi=150)
-    plt.close()
-    print("  Сохранено: plot_attack.png")
+        for ax, topo in zip(axs, topologies):
+            sub = df[df['topology'] == topo]
+            x = range(len(strategies))
+            
+            vals = [sub[sub['attack_strategy']==s][metric].values[0] 
+                    for s in strategies]
+            cis = [sub[sub['attack_strategy']==s][ci_col].values[0] 
+                   for s in strategies]
+            colors = [ATTACK_COLORS.get(s, 'gray') for s in strategies]
+            
+            ax.bar(x, vals, yerr=cis, capsize=5, color=colors, alpha=0.8, edgecolor='black')
+            ax.set_xticks(x)
+            ax.set_xticklabels([s.upper() for s in strategies], rotation=15)
+            ax.set_title(f"Топология: {topo.upper()}")
+            ax.set_ylabel(ylabel)
+            ax.grid(axis='y', alpha=0.3, linestyle='--')
+            ax.set_ylim(0, 1.0)
+        
+        if len(axs) > 0:
+            axs[0].set_ylabel(ylabel)
+        plt.suptitle(f"Векторы атак — {ylabel}")
+        plt.tight_layout()
+        plt.savefig(os.path.join(out_dir, f"plot_attack_{suffix}.png"), dpi=150)
+        plt.close()
+        print(f"  Сохранено: plot_attack_{suffix}.png")
 
 # 4. Временные ряды
 def plot_timeseries(out_dir):
@@ -186,14 +189,6 @@ def plot_sweep(out_dir):
     if not files:
         return
     
-    # Стили топологий
-    TOPO_STYLES = {
-        "full_mesh": {"color": "#1f77b4", "marker": "o", "ls": "-"},
-        "ring":      {"color": "#2ca02c", "marker": "s", "ls": "--"},
-        "star":      {"color": "#d62728", "marker": "^", "ls": "-."},
-    }
-    
-    # Создаём два графика: LCC и Weighted Survivability
     for metric_suffix, ylabel, filename in [
         ('lcc', 'LCC', 'plot_sweep_lcc.png'),
         ('wsurv', 'Взвешенная живучесть φ_w', 'plot_sweep_wsurv.png')

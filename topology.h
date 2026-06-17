@@ -43,6 +43,7 @@ struct Graph {
     std::vector<std::vector<int>> adj;  // списки смежности
 
     int degree(int n) const { return (int)adj[n].size(); }
+
     void addEdge(int u, int v) {
         adj[u].push_back(v);
         adj[v].push_back(u);
@@ -55,12 +56,12 @@ struct Graph {
 Graph createNetworkTopology(
     const std::string& topology_type,
     int                num_nodes,
-    double             base_P_attack    = 0.60,
-    double             base_P_recovery  = 0.80,
-    double             base_mu          = 0.20,
-    int                base_C_repair    = 1,
-    double             base_weight      = 1.0,
-    bool               heterogeneous    = false,
+    double             base_P_attack = 0.60,
+    double             base_P_recovery = 0.80,
+    double             base_mu = 0.20,
+    int                base_C_repair = 1,
+    double             base_weight = 1.0,
+    bool               heterogeneous = false,
     const std::unordered_map<std::string, double>& node_mix = {},
-    uint64_t           seed             = 0
+    uint64_t           seed = 0
 );

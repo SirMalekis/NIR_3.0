@@ -422,9 +422,11 @@ static void runTopology(const Config& c) {
     exportTopologyComparison(comp, c.out_dir + "/topology_comparison.csv");
 }
 
+// 2. Параметрический sweep
 static void runSweep(Config& c) {
-    fs::create_directories(c.out_dir);  // ← ИСПРАВЛЕНО
+    std::system(("mkdir -p " + c.out_dir).c_str());
     if (c.sweep_ranges.empty()) {
+        // Дефолтные диапазоны
         c.sweep_ranges["lambda"] = askLinspace("λ: MIN MAX [ТОЧЕК]", 0.1, 10.0, 0.5, 5.0, 8);
         c.sweep_ranges["resources"] = askLinspace("R: MIN MAX [ТОЧЕК]", 10, 2000, 50, 1000, 8);
         c.sweep_ranges["mu"] = askLinspace("μ: MIN MAX [ТОЧЕК]", 0.05, 0.8, 0.05, 0.8, 8);
@@ -446,11 +448,59 @@ static void runSweep(Config& c) {
             sweep_data[param][topo] = runParameterSweep(
                 param, c.sweep_ranges[param], fixed,
                 topo, c.num_nodes,
-                c.attack_strategy, c.gatekeeper,  // ← ИСПРАВЛЕНО: убраны пробелы
+                c.attack_strategy, c.gatekeeper,
                 c.n_sims, c.T, c.repair_slots);
         }
-    }
 
+        // ── ВЫВОД ТАБЛИЦЫ ДЛЯ LCC ─────────────────────────────────────
+        hr();
+        std::cout << ANSI_BOLD << "  Sweep: " << param << " (LCC)" << ANSI_RESET << '\n';
+
+        // Правильный порядок: STAR, RING, FULL_MESH (по возрастанию устойчивости)
+        std::vector<std::string> ordered_topos = { "star", "ring", "full_mesh" };
+
+        std::cout << "   " << std::left << std::setw(10) << "X_value"
+            << std::setw(15) << "STAR"
+            << std::setw(15) << "RING"
+            << std::setw(15) << "FULL_MESH" << '\n';
+        hr('-', 58);
+
+        const auto& xs = c.sweep_ranges[param];
+        for (int i = 0; i < (int)xs.size(); ++i) {
+            std::cout << std::fixed << std::setprecision(2);
+            std::cout << "   " << std::left << std::setw(10) << xs[i];
+            for (const auto& topo : ordered_topos) {
+                if (sweep_data[param].count(topo)) {
+                    double lcc = sweep_data[param][topo].lcc_means[i];
+                    std::cout << std::setw(15) << std::setprecision(3) << lcc;
+                }
+            }
+            std::cout << '\n';
+        }
+        hr();
+
+        // ── ВЫВОД ТАБЛИЦЫ ДЛЯ φ_w (ВЗВЕШЕННАЯ ЖИВУЧЕСТЬ) ─────────────
+        std::cout << "\n" << ANSI_BOLD << "  Sweep: " << param << " (Weighted Survivability φ_w)" << ANSI_RESET << '\n';
+        std::cout << "   " << std::left << std::setw(10) << "X_value"
+            << std::setw(15) << "STAR"
+            << std::setw(15) << "RING"
+            << std::setw(15) << "FULL_MESH" << '\n';
+        hr('-', 58);
+
+        for (int i = 0; i < (int)xs.size(); ++i) {
+            std::cout << std::fixed << std::setprecision(2);
+            std::cout << "   " << std::left << std::setw(10) << xs[i];
+            for (const auto& topo : ordered_topos) {
+                if (sweep_data[param].count(topo)) {
+                    double wsurv = sweep_data[param][topo].wsurv_means[i];
+                    std::cout << std::setw(15) << std::setprecision(3) << wsurv;
+                }
+            }
+            std::cout << '\n';
+        }
+        hr();
+        std::cout << "\n";
+    }
     exportParameterSweep(sweep_data, c.sweep_ranges, c.out_dir);
 }
 
@@ -487,12 +537,18 @@ static void runAttack(const Config& c) {
     fs::create_directories(c.out_dir);  // ← ИСПРАВЛЕНО
     TopoKwargs tk = cfgToTK(c);
     std::map<std::string, std::map<std::string, MCResult>> res_by_strategy;
+
     for (const auto& atk : c.attack_strategies) {
         std::cout << "\n  Стратегия атаки: " << ANSI_BOLD << atk << ANSI_RESET << '\n';
         auto comp = runTopologyComparison(
             c.topologies, c.num_nodes, tk, c.T,
             c.attack_lambda, c.global_resources,
             atk, c.gatekeeper, c.n_sims, c.repair_slots);
+
+        // ── ДОБАВЛЕНО: Вывод результатов ──────────────────────
+        printTopoReport(comp);  // Используем существующую функцию
+        // ─────────────────────────────────────────────────────
+
         for (auto& [topo, mc] : comp.results)
             res_by_strategy[atk][topo] = mc;
     }
