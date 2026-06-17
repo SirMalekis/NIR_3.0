@@ -59,13 +59,14 @@ double computeLccRatio(const Graph& G, int N_total) {
 }
 
 // ---------------------------------------------------------------------------
-// Global Efficiency = (1/n/(n-1)) * Σ_{i≠j} 1/d(i,j)
-// Вычисляем BFS от каждого активного узла — точная копия networkx.global_efficiency
+// Global Efficiency — "доля сохранённого коммуникационного потенциала"
+// Нормировка на N_total * (N_total - 1), чтобы E_norm ∈ [0, 1]
 // ---------------------------------------------------------------------------
 double computeGlobalEfficiency(const Graph& G) {
     int N = G.num_nodes;
+    if (N < 2) return 0.0;
 
-    // Строим маску и список активных узлов
+    // Строим маску активных узлов (для BFS)
     std::vector<int> active_mask(N, 0);
     std::vector<int> active;
     for (int i = 0; i < N; ++i) {
@@ -74,9 +75,11 @@ double computeGlobalEfficiency(const Graph& G) {
             active.push_back(i);
         }
     }
+
     int na = (int)active.size();
     if (na < 2) return 0.0;
 
+    // Сумма обратных расстояний между активными узлами
     double sum_inv = 0.0;
     for (int src : active) {
         auto dist = bfsDistances(G, src, active_mask);
@@ -85,7 +88,9 @@ double computeGlobalEfficiency(const Graph& G) {
                 sum_inv += 1.0 / dist[v];
         }
     }
-    return sum_inv / ((double)na * (na - 1));
+
+    // ← КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: нормируем на N_total, а не на na
+    return sum_inv / ((double)N * (N - 1));
 }
 
 double computeNormalizedEfficiency(const Graph& G, double E0) {
