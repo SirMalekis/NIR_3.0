@@ -695,7 +695,7 @@ int main(int argc, char* argv[]) {
 
     bool quick = (argc > 1 && std::string(argv[1]) == "--quick");
 
-    header("Модель устойчивости ИИ  v2.1  [C++]");
+    header("Модель устойчивости информационной инфраструктуры");
     std::cout << '\n';
 
     if (!quick) {
